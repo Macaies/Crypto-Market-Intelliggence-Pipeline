@@ -1,0 +1,811 @@
+{
+  "name": "crypto v3",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "crypto/mover/pipeline",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -832,
+        -704
+      ],
+      "id": "61a6f3a2-41aa-408f-86dd-eae9e32739d3",
+      "name": "Webhook",
+      "webhookId": "68a645bb-caa5-416f-a874-d13e6e180285"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -640,
+        -432
+      ],
+      "id": "b2b6915a-e9e2-4167-b519-560c24e6a5b9",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// FINAL AGGREGATION — Clean Top Lists\n// ============================================\n\nconst rows = $input.all().map(i => i.json);\n\n// Keep valid items only (if using validation)\nconst clean = rows\n  .filter(r => r && r.symbol)\n  .filter(r => r.valid === undefined ? true : r.valid === true);\n\n// Normalize numbers\nconst data = clean.map(r => ({\n  symbol: r.symbol,\n  changePct: Number(r.changePct),\n  volumeUSDT: Number(r.volumeUSDT),   // quoteVolume\n  tradeCount: Number(r.tradeCount),   // count\n}));\n\n// 🔺 TOP 10 GAINERS\nconst topGainers = [...data]\n  .sort((a, b) => b.changePct - a.changePct)\n  .slice(0, 10)\n  .map(x => ({\n    symbol: x.symbol,\n    changePct: x.changePct.toFixed(2)\n  }));\n\n// 🔻 TOP 10 LOSERS\nconst topLosers = [...data]\n  .sort((a, b) => a.changePct - b.changePct)\n  .slice(0, 10)\n  .map(x => ({\n    symbol: x.symbol,\n    changePct: x.changePct.toFixed(2)\n  }));\n\n// 💰 TOP 5 VOLUME (volume ONLY)\nconst topVolume = [...data]\n  .sort((a, b) => b.volumeUSDT - a.volumeUSDT)\n  .slice(0, 5)\n  .map(x => ({\n    symbol: x.symbol,\n    volumeUSDT: Math.round(x.volumeUSDT)\n  }));\n\n// 🔁 TOP 5 TRADES (count ONLY)\nconst topTrades = [...data]\n  .sort((a, b) => b.tradeCount - a.tradeCount)\n  .slice(0, 5)\n  .map(x => ({\n    symbol: x.symbol,\n    tradeCount: x.tradeCount\n  }));\n\n// Summary\nconst summary = {\n  inputCount: rows.length,\n  usedCount: data.length,\n  generatedAt: new Date().toISOString(),\n};\n\n// Return ONE item\nreturn [{\n  json: {\n    summary,\n    topGainers,\n    topLosers,\n    topVolume,\n    topTrades,\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        -672
+      ],
+      "id": "0b3c45f1-6cd3-4543-8734-dcb74ba7a18f",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a professional crypto market analyst.\n\nYou will receive news grouped by crypto asset symbol in JSON format.\nEach key is an asset (e.g., DENT, ATOM, DOT) and contains a list of articles.\n\nAnalyze the sentiment for EACH asset based ONLY on the provided news.\n\nIMPORTANT RULES:\n\n• Use the asset key as the symbol (e.g., \"DENT\", \"ATOM\"). DO NOT add \"USDT\".\n• If news is mixed or unclear → sentiment = \"neutral\"\n• sentimentScore must be from -10 to +10\n• Reasons must be short, factual, and based on the articles\n• Use 2–5 reasons when possible\n• Select up to 3 most relevant headlines as evidence\n• Do NOT invent information not present in the news\n• Return STRICT JSON ONLY (no text, no explanations)\n\nINPUT NEWS (JSON):\n{{$json.groupedNews}}\n\nOUTPUT FORMAT:\n\n{\n  \"analysis\": [\n    {\n      \"symbol\": \"DENT\",\n      \"sentiment\": \"positive|neutral|negative\",\n      \"sentimentScore\": 0,\n      \"reasons\": [\"reason1\", \"reason2\"],\n      \"keyHeadlines\": [\n        {\n          \"title\": \"...\",\n          \"url\": \"...\",\n          \"source\": \"...\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2176,
+        -704
+      ],
+      "id": "9a2a009a-1a48-4ada-8b2c-c79f2d53d490",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "// -------------------------------\n// 1) Read AI Agent output safely\n// -------------------------------\nconst aiRaw = $input.first()?.json ?? {};\n\nconst maybeText =\n  (typeof aiRaw.output === \"string\" && aiRaw.output) ||\n  (typeof aiRaw.text === \"string\" && aiRaw.text) ||\n  (typeof aiRaw.content === \"string\" && aiRaw.content) ||\n  (typeof aiRaw.data?.output === \"string\" && aiRaw.data.output) ||\n  null;\n\nlet aiObj = null;\n\nif (maybeText) {\n  const cleaned = maybeText\n    .trim()\n    .replace(/^```json\\s*/i, \"\")\n    .replace(/^```\\s*/i, \"\")\n    .replace(/```$/i, \"\");\n\n  try { aiObj = JSON.parse(cleaned); } catch { aiObj = null; }\n} else if (Array.isArray(aiRaw.analysis)) {\n  aiObj = aiRaw;\n}\n\nconst analysis = Array.isArray(aiObj?.analysis) ? aiObj.analysis : [];\n\n// -------------------------------\n// 2) Get market movers (safe)\n// -------------------------------\nconst marketItems = $items(\"Code in JavaScript2\");\nconst market = marketItems?.[0]?.json ?? {\n  topGainers: [],\n  topLosers: [],\n  topVolume: [],\n  topTrades: []\n};\n\n// -------------------------------\n// 3) Build a map: asset -> sentiment object\n// -------------------------------\nconst sentimentMap = {};\nfor (const a of analysis) {\n  if (!a || !a.symbol) continue;\n  sentimentMap[String(a.symbol).toUpperCase()] = a;\n}\n\nfunction toAsset(sym) {\n  return String(sym || \"\")\n    .toUpperCase()\n    .replace(/USDT$/, \"\")\n    .trim();\n}\n\nfunction attachSentiment(list, n = 5) {\n  return (Array.isArray(list) ? list : []).slice(0, n).map(c => {\n    const asset = toAsset(c.symbol);\n    const a = sentimentMap[asset];\n\n    return {\n      symbol: c.symbol,\n      asset,\n      changePct: c.changePct,\n      sentiment: a?.sentiment || \"neutral\",\n      score: a?.sentimentScore ?? 0,\n      reasons: Array.isArray(a?.reasons) ? a.reasons : [],\n      keyHeadlines: Array.isArray(a?.keyHeadlines) ? a.keyHeadlines : []\n    };\n  });\n}\n\nreturn [{\n  json: {\n    topGainers: (market.topGainers ?? []).slice(0, 10),\n    topLosers: (market.topLosers ?? []).slice(0, 10),\n    topVolume: (market.topVolume ?? []).slice(0, 5),\n    topTrades: (market.topTrades ?? []).slice(0, 5),\n\n    sentiment: {\n      gainers: attachSentiment(market.topGainers, 5),\n      losers: attachSentiment(market.topLosers, 5)\n    },\n\n    _debug: {\n      aiParsed: !!aiObj,\n      analysisCount: analysis.length,\n      exampleAIKeys: Object.keys(sentimentMap).slice(0, 10)\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2480,
+        -704
+      ],
+      "id": "a1e69ed2-1df0-414d-b96d-800385021b27",
+      "name": "Code in JavaScript4"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2672,
+        -704
+      ],
+      "id": "256347d6-a5ff-45f6-a7c4-52a5cc5edbb5",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1664,
+        -720
+      ],
+      "id": "6533eb76-edb8-4258-b6b9-a460c86b687d",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const g = $json.topGainers.slice(0, 5).map(x => x.symbol);\nconst l = $json.topLosers.slice(0, 5).map(x => x.symbol);\n\nconst symbols = [...g, ...l];\n\nreturn symbols.map(s => ({\n  json: { symbol: s }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -64,
+        -672
+      ],
+      "id": "9c867d42-bfce-497f-bbde-55497879ac84",
+      "name": "Extract Symbols for News"
+    },
+    {
+      "parameters": {
+        "url": "https://api.binance.com/api/v3/ticker/24hr",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -608,
+        -704
+      ],
+      "id": "61af6a5b-193d-4e15-9838-84f18a466a29",
+      "name": "Binance HTTP"
+    },
+    {
+      "parameters": {
+        "jsCode": "const grouped = {};\nlet total = 0;\nlet kept = 0;\nconst missingAssetSamples = [];\n\nfor (const item of items) {\n  total++;\n  const j = item.json || {};\n\n  const asset = (j.asset ?? \"\").toString().trim();\n  if (!asset) {\n    if (missingAssetSamples.length < 5) {\n      missingAssetSamples.push({\n        source: j.source,\n        title: j.title,\n        url: j.url,\n        asset: j.asset,\n      });\n    }\n    continue;\n  }\n\n  // Optional: filter invalid articles (prevents empty rows)\n  const title = (j.title ?? \"\").toString().trim();\n  const url = (j.url ?? \"\").toString().trim();\n  if (!title || !url) continue;\n\n  if (!grouped[asset]) grouped[asset] = [];\n  grouped[asset].push({\n    source: j.source || \"\",\n    title,\n    url,\n    publishedAt: j.publishedAt || null,\n    summary: (j.summary ?? \"\").toString(),\n  });\n\n  kept++;\n}\n\n// limit per asset\nfor (const k of Object.keys(grouped)) {\n  grouped[k] = grouped[k].slice(0, 10);\n}\n\n// ✅ Debug info (so you instantly know why it’s empty)\nreturn [\n  {\n    json: {\n      groupedNews: grouped,\n      _debug: {\n        totalIncomingItems: total,\n        keptItems: kept,\n        assetCount: Object.keys(grouped).length,\n        missingAssetSamples,\n      },\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        -704
+      ],
+      "id": "23d753d9-1d94-4fe5-ac79-2f2dbca7971d",
+      "name": "Group News"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.rssUrl}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        1088,
+        -336
+      ],
+      "id": "4949c5c9-fdab-49c2-bfd9-cf981ad472b5",
+      "name": "coindesk"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.rssUrl}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        1072,
+        -624
+      ],
+      "id": "129118be-40a9-4837-b63a-d0d80c23eafc",
+      "name": "cointelegrap"
+    },
+    {
+      "parameters": {
+        "jsCode": "const coin = $item(0).$node[\"cointelegraph loop\"].json;\n\nreturn $items()\n  .map(i => {\n    const j = i.json || {};\n    const title = j.title || \"\";\n    const url = j.link || j.url || \"\";\n    const publishedAt = j.isoDate || j.pubDate || null;\n\n    const summary =\n      j.contentSnippet ||\n      j.content ||\n      j[\"content:encoded\"] ||\n      j.description ||\n      \"\";\n\n    return {\n      json: {\n        asset: coin.asset,\n        name: coin.name,\n        source: \"Cointelegraph\",\n        title,\n        url,\n        publishedAt,\n        summary,\n        isEmpty: !(title && url),\n      }\n    };\n  })\n  .filter(x => !x.json.isEmpty);"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        -624
+      ],
+      "id": "ce988b7b-68c5-41ff-a5a8-690c856aad58",
+      "name": "Normalize Cointelegraph"
+    },
+    {
+      "parameters": {
+        "jsCode": "const coin = $item(0).$node[\"coindesk loop\"].json;\n\nreturn $items()\n  .map(i => {\n    const j = i.json || {};\n    const title = j.title || \"\";\n    const url = j.link || j.url || \"\";\n    const publishedAt = j.isoDate || j.pubDate || null;\n\n    const summary =\n      j.contentSnippet ||\n      j.content ||\n      j[\"content:encoded\"] ||\n      j.description ||\n      \"\";\n\n    return {\n      json: {\n        asset: coin.asset,\n        name: coin.name,\n        source: \"CoinDesk\",\n        title,\n        url,\n        publishedAt,\n        summary,\n        isEmpty: !(title && url),\n      }\n    };\n  })\n  .filter(x => !x.json.isEmpty);"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        -336
+      ],
+      "id": "0f5e2248-749b-44aa-9661-6a3420e67960",
+      "name": "Normalize Coindesk",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"keyword\": \"{{ $json.symbol.replace(/USDT$/, '') }}\"\n}\n",
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        -672
+      ],
+      "id": "0d21ba3f-7a35-4be5-83fe-0281af2bfd68",
+      "name": "Build Sentiment Target"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input items: each item has { symbol, keyword } (keyword = base coin like DENT)\n// Output: one item per coin with its own rssUrl + query\n\nconst kws = $items().map(i => i.json.keyword).filter(Boolean);\nconst unique = [...new Set(kws)];\n\nconst nameMap = {\n  BTC: \"Bitcoin\",\n  ETH: \"Ethereum\",\n  XRP: \"XRP\",\n  SOL: \"Solana\",\n  DOGE: \"Dogecoin\",\n  DOT: \"Polkadot\",\n  UNI: \"Uniswap\",\n  AR: \"Arweave\",\n};\n\nconst enc = (s) => encodeURIComponent(s);\n\nreturn unique.map(asset => {\n  const name = nameMap[asset] || asset;\n\n  // robust query: name + ticker + crypto context\n  const query = `(\"${name}\" OR \"${asset}\") (crypto OR token OR blockchain OR exchange OR ETF OR SEC OR lawsuit OR hack OR partnership OR listing OR delisting)`;\n\n  const rssUrl = `https://news.google.com/rss/search?q=${enc(query)}&hl=en-AU&gl=AU&ceid=AU:en`;\n\n  return {\n    json: {\n      asset,       // e.g. DENT\n      name,        // e.g. Dent\n      query,\n      rssUrl\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        -720
+      ],
+      "id": "d94ab770-daeb-40fb-87ed-c65420d83de7",
+      "name": "BUILD NEWS QUERY"
+    },
+    {
+      "parameters": {
+        "jsCode": "// JS0 — Binance 24hr ticker → candidate list for liquidity check\n\nconst data = $input.all().map(i => i.json);\n\nconst toNum = (v) => {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : 0;\n};\n\nconst MIN_VOLUME_USDT = 1_000_000;\nconst MIN_TRADES = 1_000;\n\n// Build clean rows\nconst base = data\n  .filter(t => typeof t.symbol === \"string\" && t.symbol.endsWith(\"USDT\"))\n  .filter(t => !/(UP|DOWN|BULL|BEAR)USDT$/.test(t.symbol))\n  .map(t => ({\n    symbol: t.symbol,\n    changePct: toNum(t.priceChangePercent),\n    volumeUSDT: toNum(t.quoteVolume),\n    tradeCount: toNum(t.count),\n    lastPrice: toNum(t.lastPrice),\n  }))\n  .filter(x => x.volumeUSDT >= MIN_VOLUME_USDT && x.tradeCount >= MIN_TRADES)\n  .filter(x => x.lastPrice > 0);\n\n// Rank pools\nconst topGainersPool = [...base]\n  .sort((a,b) => b.changePct - a.changePct)\n  .slice(0, 50);\n\nconst topLosersPool  = [...base]\n  .sort((a,b) => a.changePct - b.changePct)\n  .slice(0, 50);\n\n// Combine & dedupe\nconst map = new Map();\nfor (const r of [...topGainersPool, ...topLosersPool]) {\n  map.set(r.symbol, r);\n}\n\nlet moversForLoop = [...map.values()];\n\n// 🔥 REDUCE HERE (before return)\nmoversForLoop = moversForLoop\n  .sort((a,b) => b.volumeUSDT - a.volumeUSDT)  // most liquid first\n  .slice(0, 60);                               // keep only 60\n\n// Final output to Loop Over Items\nreturn moversForLoop.map(m => ({ json: m }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -864,
+        -432
+      ],
+      "id": "0c2554f0-1cd9-4baa-9059-b7cf345b17a2",
+      "name": "crypto shortlist"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// JavaScript1 — Market Quality Metrics (LOOP SAFE + correct symbol)\n// ============================================\n\n// ✅ Get current loop item (the mover) correctly\nconst base = $item(0).$node[\"Loop Over Items\"].json;\nconst symbol = base.symbol;\n\n// ✅ Depth response from HTTP Request1\nconst bids = $json.bids || [];\nconst asks = $json.asks || [];\n\n// best bid/ask\nconst bestBid = parseFloat(bids[0]?.[0] || 0);\nconst bestAsk = parseFloat(asks[0]?.[0] || 0);\n\nconst spread = bestAsk - bestBid;\nconst midPrice = (bestAsk + bestBid) / 2;\nconst spreadPct = midPrice > 0 ? (spread / midPrice) * 100 : 0;\n\nfunction depthWithinPercent(orders, anchorPrice, percent, isBidSide) {\n  if (!Array.isArray(orders) || orders.length === 0 || anchorPrice <= 0) return 0;\n\n  const threshold = isBidSide\n    ? anchorPrice * (1 - percent)\n    : anchorPrice * (1 + percent);\n\n  let totalQuote = 0;\n\n  for (const level of orders) {\n    const priceLevel = parseFloat(level?.[0] || 0);\n    const qty = parseFloat(level?.[1] || 0);\n    if (priceLevel <= 0 || qty <= 0) continue;\n\n    if (isBidSide) {\n      if (priceLevel >= threshold) totalQuote += priceLevel * qty;\n      else break;\n    } else {\n      if (priceLevel <= threshold) totalQuote += priceLevel * qty;\n      else break;\n    }\n  }\n\n  return totalQuote;\n}\n\nconst depth1pctUSDT =\n  depthWithinPercent(bids, bestBid, 0.01, true) +\n  depthWithinPercent(asks, bestAsk, 0.01, false);\n\nconst depth2pctUSDT =\n  depthWithinPercent(bids, bestBid, 0.02, true) +\n  depthWithinPercent(asks, bestAsk, 0.02, false);\n\n// thresholds (tune)\nconst MAX_SPREAD_PCT = 1.5;\nconst MIN_DEPTH_1PCT = 5000;\nconst MIN_DEPTH_2PCT = 10000;\n\nconst isInvalid =\n  !symbol ||\n  bids.length === 0 ||\n  asks.length === 0 ||\n  bestBid <= 0 ||\n  bestAsk <= 0 ||\n  spread <= 0 ||\n  !Number.isFinite(spreadPct) ||\n  spreadPct <= 0 ||\n  depth1pctUSDT <= 0 ||\n  depth2pctUSDT <= 0;\n\nconst failsQuality =\n  spreadPct > MAX_SPREAD_PCT ||\n  depth1pctUSDT < MIN_DEPTH_1PCT ||\n  depth2pctUSDT < MIN_DEPTH_2PCT;\n\nconst valid = !(isInvalid || failsQuality);\n\nreturn [\n  {\n    json: {\n      ...base, // includes changePct, volumeUSDT, tradeCount etc\n      symbol,\n      bestBid,\n      bestAsk,\n      spread,\n      spreadPct,\n      depth1pctUSDT,\n      depth2pctUSDT,\n      valid,\n      reason: valid ? null : (isInvalid ? \"invalid_orderbook\" : \"fails_quality\"),\n      checkedAt: new Date().toISOString(),\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        -368
+      ],
+      "id": "9e331524-f7ab-4e9b-9b9b-aade9f292204",
+      "name": "Liquidity calc"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.binance.com/api/v3/depth?symbol={{$json.symbol}}&limit=100",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -448,
+        -368
+      ],
+      "id": "2fa6507b-6da6-495b-b5f4-aac6119df314",
+      "name": "Order book"
+    },
+    {
+      "parameters": {
+        "content": "# Active Crypto detection (Volatile)",
+        "height": 784,
+        "width": 1008
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -944,
+        -944
+      ],
+      "typeVersion": 1,
+      "id": "abc97e96-9df2-47e7-af49-d5bcff2cec20",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.rssUrl}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        1072,
+        -960
+      ],
+      "id": "4978fe94-6499-42de-b9eb-1fb61e6dad79",
+      "name": "Google rss"
+    },
+    {
+      "parameters": {
+        "jsCode": "const assets = $items()\n  .map(i => i.json.asset)\n  .filter(Boolean);\n\nconst unique = [...new Set(assets)];\n\nconst nameMap = {\n  BTC: \"Bitcoin\",\n  ETH: \"Ethereum\",\n  XRP: \"XRP\",\n  SOL: \"Solana\",\n  DOGE: \"Dogecoin\",\n  DOT: \"Polkadot\",\n  UNI: \"Uniswap\",\n  AR: \"Arweave\",\n};\n\nconst enc = (s) => encodeURIComponent(s);\n\nreturn unique.map(asset => {\n  const name = nameMap[asset] || asset;\n\n  const query = `(\"${name}\" OR \"${asset}\") (crypto OR token OR blockchain OR exchange OR ETF OR SEC OR lawsuit OR hack OR partnership OR listing OR delisting)`;\n\n  const rssUrl = `https://news.google.com/rss/search?q=${enc(query)}&hl=en-AU&gl=AU&ceid=AU:en`;\n\n  return {\n    json: { asset, name, query, rssUrl }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        -1056
+      ],
+      "id": "594ede81-59de-49b8-87f9-81184ddda233",
+      "name": "Build news target"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        912,
+        -1056
+      ],
+      "id": "da2c8359-df88-4021-bd3d-129082fe39a4",
+      "name": "Google rss loop"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ✅ Always use the CURRENT item from the loop node\nconst coin = $item(0).$node[\"Google rss loop\"].json;\n\nreturn $items().map(i => ({\n  json: {\n    asset: coin.asset,\n    name: coin.name,\n    source: \"GoogleNews\",\n\n    title: i.json.title,\n    url: i.json.link,\n    publishedAt: i.json.pubDate || i.json.isoDate || null,\n    summary: i.json.contentSnippet || i.json.content || i.json.description || \"\"\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        -928
+      ],
+      "id": "2a194968-db29-4166-95a1-d3f6a3ce1d8e",
+      "name": "Normalize google rss"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        864,
+        -704
+      ],
+      "id": "73a72f47-aee0-49c1-bc60-fc640a824526",
+      "name": "cointelegraph loop"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        880,
+        -400
+      ],
+      "id": "164cc407-7760-499c-9c84-e39af51a77ab",
+      "name": "coindesk loop"
+    },
+    {
+      "parameters": {
+        "jsCode": "const assets = $items().map(i => i.json.asset).filter(Boolean);\nconst unique = [...new Set(assets)];\n\nreturn unique.map(asset => ({\n  json: {\n    asset,\n    name: asset,\n    source: \"Cointelegraph\",\n    rssUrl: \"https://cointelegraph.com/rss\"\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        -624
+      ],
+      "id": "ca3d3e0c-0dd4-45b1-b8d4-394fbcb76154",
+      "name": "Build news target cointelegraph"
+    },
+    {
+      "parameters": {
+        "jsCode": "// CoinDesk: use global RSS, then filter per coin later in Normalize\nconst assets = $items().map(i => i.json.asset || i.json.keyword).filter(Boolean);\nconst unique = [...new Set(assets)];\n\nconst nameMap = {\n  BTC: \"Bitcoin\",\n  ETH: \"Ethereum\",\n  XRP: \"XRP\",\n  SOL: \"Solana\",\n  DOGE: \"Dogecoin\",\n  DOT: \"Polkadot\",\n  UNI: \"Uniswap\",\n  AR: \"Arweave\",\n};\n\nconst rssUrlGlobal = \"https://www.coindesk.com/arc/outboundfeeds/rss/\";\n\nreturn unique.map(asset => {\n  const name = nameMap[asset] || asset;\n  const query = `${name} OR ${asset}`;\n\n  return {\n    json: {\n      asset,\n      name,\n      source: \"CoinDesk\",\n      query,\n      rssUrl: rssUrlGlobal\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        -416
+      ],
+      "id": "68ae173b-293f-441d-b7bf-eba9fde36df3",
+      "name": "Build news target cointelegraph1"
+    },
+    {
+      "parameters": {
+        "content": "# Sentiment Pipeline",
+        "height": 1152,
+        "width": 1344
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        176,
+        -1168
+      ],
+      "typeVersion": 1,
+      "id": "921e68fd-6e12-458b-a7ca-733e1b712f40",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "# Most Active Crypto and Sentiment Dection",
+        "height": 816,
+        "width": 1472
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1584,
+        -1088
+      ],
+      "typeVersion": 1,
+      "id": "e2326af9-6eb1-466d-92a7-28a077d9635a",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const grouped = $json.groupedNews || {};\n\nconst MAX_ASSETS = 5;          // analyze only top N assets\nconst MAX_ARTICLES = 3;        // keep only top N articles per asset\nconst MAX_SUMMARY_LEN = 220;   // cut long summaries\n\nconst assets = Object.keys(grouped).slice(0, MAX_ASSETS);\n\nconst slim = {};\nfor (const asset of assets) {\n  slim[asset] = (grouped[asset] || [])\n    .slice(0, MAX_ARTICLES)\n    .map(a => ({\n      source: a.source,\n      title: a.title,\n      url: a.url,\n      publishedAt: a.publishedAt,\n      summary: (a.summary || \"\").slice(0, MAX_SUMMARY_LEN),\n    }));\n}\n\nreturn [{ json: { groupedNews: slim, _debug: { assetsKept: assets.length, maxArticles: MAX_ARTICLES } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        -688
+      ],
+      "id": "b31c9f71-a170-4f73-a839-b83568bae1db",
+      "name": "slim news"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2048,
+        -496
+      ],
+      "id": "e180c83d-50a2-42d1-8ecc-392ed3c73a8c",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "xfa7e2YKLW6H4vKL",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Binance HTTP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Order book",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Extract Symbols for News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript4": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Group News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Symbols for News": {
+      "main": [
+        [
+          {
+            "node": "Build Sentiment Target",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Binance HTTP": {
+      "main": [
+        [
+          {
+            "node": "crypto shortlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group News": {
+      "main": [
+        [
+          {
+            "node": "slim news",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "coindesk": {
+      "main": [
+        [
+          {
+            "node": "Normalize Coindesk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "cointelegrap": {
+      "main": [
+        [
+          {
+            "node": "Normalize Cointelegraph",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Cointelegraph": {
+      "main": [
+        [
+          {
+            "node": "cointelegraph loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Coindesk": {
+      "main": [
+        [
+          {
+            "node": "coindesk loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Sentiment Target": {
+      "main": [
+        [
+          {
+            "node": "BUILD NEWS QUERY",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BUILD NEWS QUERY": {
+      "main": [
+        [
+          {
+            "node": "Build news target",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build news target cointelegraph",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build news target cointelegraph1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "crypto shortlist": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Liquidity calc": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Order book": {
+      "main": [
+        [
+          {
+            "node": "Liquidity calc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google rss": {
+      "main": [
+        [
+          {
+            "node": "Normalize google rss",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build news target": {
+      "main": [
+        [
+          {
+            "node": "Google rss loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google rss loop": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Google rss",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize google rss": {
+      "main": [
+        [
+          {
+            "node": "Google rss loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "cointelegraph loop": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "cointelegrap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "coindesk loop": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ],
+        [
+          {
+            "node": "coindesk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build news target cointelegraph": {
+      "main": [
+        [
+          {
+            "node": "cointelegraph loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build news target cointelegraph1": {
+      "main": [
+        [
+          {
+            "node": "coindesk loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "slim news": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "9ebeefe9-24b3-42d7-9bda-1c5b75b3d58b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "04901bd759a946d17da5deac3e8489a234c334597a4c4e3c9155387b8d202912"
+  },
+  "id": "LnQn2Vloj3Llj4Hv",
+  "tags": []
+}
