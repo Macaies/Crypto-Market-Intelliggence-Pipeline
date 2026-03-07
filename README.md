@@ -1,458 +1,209 @@
-# Crypto-Market-Intelliggence-Pipeline
-Automated News-Driven Trade Opportunity Scanner  An end-to-end automated data pipeline that detects active cryptocurrencies, aggregates multi-source news, applies AI sentiment analysis, and produces structured insights for potential daily trading opportunities.
+# 🚀 Crypto Market Intelligence Pipeline
 
+> **Automated News-Driven Trade Opportunity Scanner**
+> An end-to-end automated data pipeline that detects active cryptocurrencies, aggregates multi-source news, applies AI sentiment analysis, and produces structured insights for potential daily trading opportunities.
 
+---
 
-# Project Purpose
+## 🖥️ Web Dashboard
+
+A fully interactive web dashboard is included (`crypto-dashboard.html`) that connects directly to the n8n webhook and visualizes the pipeline output in real time.
+
+### Features
+- **Top 10 Gainers & Losers** — crypto symbol chips with % change
+- **AI Sentiment Panel** — per-coin sentiment score, reasons, and key headlines (powered by Gemini)
+- **Top Volume & Top Trades** — bar chart panels from Binance data
+- **Pipeline Visualization** — plays the workflow video while data is loading
+- **Demo Mode** — preview the dashboard with sample data without needing the webhook live
+- **Single HTML file** — no build step, no dependencies, open directly in any browser
+
+### How to Use
+1. Open `crypto-dashboard.html` in your browser
+2. Paste your n8n production webhook URL:
+   ```
+   https://your-n8n-instance/webhook/crypto/demo/movers
+   ```
+3. Click **▶ Run Analysis** — the pipeline video plays while data loads (~30s)
+4. Dashboard renders with live market intelligence
+
+### n8n Webhook Setup
+In your n8n Webhook node, configure:
+| Setting | Value |
+|---|---|
+| HTTP Method | `POST` |
+| Allowed Origins (CORS) | `*` |
+| Respond | Using 'Respond to Webhook' Node |
+
+Then **activate** the workflow to register the production URL.
+
+---
+
+## 🎯 Project Purpose
+
 This project develops an end-to-end automated data pipeline that identifies potential cryptocurrency trading opportunities for the current day by combining:
-•	Market movement data
-•	Liquidity indicators
-•	Multi-source news aggregation
-•	AI-based sentiment analysis
-•	Structured API output
-👉 The goal is to answer:
-“Which coins are moving today — and WHY?”
-________________________________________
-## Business Problem Addressed
+
+- 📈 Market movement data
+- 💧 Liquidity indicators
+- 📰 Multi-source news aggregation
+- 🧠 AI-based sentiment analysis
+- 🔌 Structured API output
+
+> **The goal is to answer: "Which coins are moving today — and WHY?"**
+
+---
+
+## ❌ Business Problem Addressed
+
 Crypto traders face information overload:
 
-❌ Thousands of coins
+- Thousands of coins
+- Constant price fluctuations
+- Fragmented news sources
+- Difficulty linking news to price movement
+- Lack of real-time decision support
 
-❌ Constant price fluctuations
+---
 
-❌ Fragmented news sources
-
-❌ Difficulty linking news to price movement
-
-❌ Lack of real-time decision support
-________________________________________
-## Solution Overview
+## ✅ Solution Overview
 
 The system automatically:
-1.	Detects active coins based on market data
-2.	Aggregates relevant news per coin
-3.	Filters noise and duplicates
-4.	Applies AI sentiment analysis
-5.	Produces structured insights for trading decisions
-________________________________________
-## Tools & Technologies Used
-🔹 Workflow Orchestration
 
-n8n (self-hosted)
-
-Used as the core automation engine.
-
-Capabilities leveraged:
-
-•	API orchestration
-
-•	Scheduling / triggering
-
-•	Loop processing
-
-•	Data transformation
-
-•	Error handling
-
-•	Webhook API creation
-
-•	AI integration
-
-👉 Acts as a lightweight ETL + orchestration platform
-________________________________________
-## 🔹 Market Data Source
-
-Binance Public API
-
-Key endpoint:
-
-/api/v3/ticker/24hr
-
-Used to compute:
-
-•	Top gainers (24h % change)
-
-•	Top losers
-
-•	Highest volume pairs
-
-•	Most traded pairs
-________________________________________
-## 🔹 News Data Sources
-
-Multi-source ingestion for robustness:
-
- ### Google News RSS
- 
-•	Broad coverage
-
-•	Fast updates
-
-•	High recall
-
-### CoinDesk RSS
-•	Institutional-grade crypto reporting
-
-
-### Cointelegraph RSS
-
-•	Retail-focused market news
-
-•	Project updates
-
-•	Ecosystem developments
-
-👉 Combining sources reduces bias and improves coverage.
-________________________________________
-## 🔹 AI & NLP Engine
-Google Gemini Chat Model
-
-Used for:
-
-•	Per-coin sentiment analysis
-
-•	Market impact interpretation
-
-•	Headline extraction
-
-•	Reason generation
-________________________________________
-## 🔹 Programming / Data Transformation
-
-JavaScript (inside n8n Code nodes)
-
-Used for:
-
-•	Data normalization
-
-•	Filtering
-
-•	Grouping by asset
-
-•	Merging datasets
-
-•	Final API formatting
-________________________________________
-## 🔹 API Layer
-
-Webhook endpoint (n8n)
-
-Provides structured JSON output for:
-
-•	Dashboards
-
-•	Frontend apps
-
-•	Automation tools
-
-•	Trading assistants
-________________________________________
-## System Architecture
-
-🔄 High-Level Pipeline Flow
-
-Market Data → Coin Selection → News Retrieval → Normalization → Grouping → AI Analysis → Structured Output
-________________________________________
-## Detailed Workflow
-
-### 1️⃣ Market Detection Layer
-
-Identifies active coins:
-
-•	Top gainers
-
-•	Top losers
-
-•	High volume
-
-•	High trade activity
-
-👉 Focuses analysis on relevant assets only.
-________________________________________
-### 2️⃣ News Acquisition Layer
-
-For each selected coin:
-
-•	Query multiple RSS sources
-
-•	Retrieve recent articles
-
-•	Handle rate limits
-
-•	Prevent pipeline overload
-________________________________________
-### 3️⃣ Data Normalization Layer
-
-Each source has different formats.
-
-Normalized into a unified schema:
+1. Detects active coins based on market data
+2. Aggregates relevant news per coin
+3. Filters noise and duplicates
+4. Applies AI sentiment analysis
+5. Produces structured insights for trading decisions
+
+---
+
+## 🛠️ Tools & Technologies
+
+| Layer | Tool | Purpose |
+|---|---|---|
+| Orchestration | n8n (self-hosted) | ETL + automation engine |
+| Market Data | Binance Public API `/api/v3/ticker/24hr` | Gainers, losers, volume, trades |
+| News Sources | Google News RSS, CoinDesk RSS, Cointelegraph RSS | Multi-source news aggregation |
+| AI Engine | Google Gemini | Sentiment analysis, headline extraction |
+| Transformation | JavaScript (n8n Code nodes) | Normalization, grouping, formatting |
+| API Layer | n8n Webhook | Structured JSON output |
+| Dashboard | HTML/CSS/JS (single file) | Interactive visualization |
+
+---
+
+## 🏗️ System Architecture
+
+```
+Webhook Trigger
+      │
+      ▼
+┌─────────────────────────────────┐
+│  Active Crypto Detection        │
+│  Binance API → Top Gainers,     │
+│  Losers, Volume, Trades         │
+└──────────────┬──────────────────┘
+               │
+               ▼
+┌─────────────────────────────────┐
+│  Sentiment Pipeline             │
+│  Google RSS + CoinDesk +        │
+│  Cointelegraph → Normalize →    │
+│  Group by Asset                 │
+└──────────────┬──────────────────┘
+               │
+               ▼
+┌─────────────────────────────────┐
+│  AI Analysis (Gemini)           │
+│  Sentiment Score + Reasons +    │
+│  Key Headlines per coin         │
+└──────────────┬──────────────────┘
+               │
+               ▼
+┌─────────────────────────────────┐
+│  Structured JSON Output         │
+│  topGainers, topLosers,         │
+│  topVolume, topTrades,          │
+│  sentiment { gainers, losers }  │
+└─────────────────────────────────┘
+```
+
+---
+
+## 📦 Repository Contents
+
+| File | Description |
+|---|---|
+| `crypto-market-intelligence-n8n.json` | n8n workflow — import this into your n8n instance |
+| `crypto-dashboard.html` | Interactive web dashboard — open in browser |
+| `crypto-pipeline.mp4` | Pipeline visualization video (used in dashboard loading screen) |
+| `README.md` | This file |
+
+---
+
+## 🚀 Getting Started
+
+### 1. Import the n8n Workflow
+1. Open your n8n instance
+2. Go to **Workflows** → **Import from file**
+3. Select `crypto-market-intelligence-n8n.json`
+4. Configure your credentials (Binance, Google Gemini)
+5. Set up the Webhook node (POST, CORS `*`)
+6. **Activate** the workflow
+
+### 2. Open the Dashboard
+1. Download `crypto-dashboard.html`
+2. Open it in Chrome or Edge
+3. Enter your production webhook URL
+4. Click **▶ Run Analysis**
+
+### 3. API Output Format
 ```json
 {
-  "asset": "ATOM",
-  "name": "Cosmos",
-  "source": "CoinDesk",
-  "title": "...",
-  "url": "...",
-  "publishedAt": "...",
-  "summary": "..."
+  "topGainers": [
+    { "symbol": "SIGNUSDT", "changePct": 36.09 }
+  ],
+  "topLosers": [
+    { "symbol": "BARDUSDT", "changePct": -27.77 }
+  ],
+  "topVolume": [
+    { "symbol": "USDCUSDT", "quoteVolume": 1308135661 }
+  ],
+  "topTrades": [
+    { "symbol": "ROBOUSDT", "count": 1748579 }
+  ],
+  "sentiment": {
+    "gainers": [
+      {
+        "symbol": "SIGNUSDT",
+        "asset": "SIGN",
+        "sentiment": "positive",
+        "sentimentScore": 7,
+        "reasons": ["Strong buy pressure", "New partnership announced"],
+        "keyHeadlines": ["SIGN token surges on major CEX listing news"]
+      }
+    ],
+    "losers": []
+  }
 }
 ```
-👉 Critical for downstream processing.
-________________________________________
-### 4️⃣ News Grouping Layer
-Articles are grouped per asset:
-```json
-{
-  "ATOM": [ ...articles... ],
-  "DOT": [ ...articles... ]
-}
-Limits applied to prevent payload explosion.
-```
-________________________________________
-### 5️⃣ AI Analysis Layer
-The Gemini model evaluates:
 
-•	Overall sentiment
+---
 
-•	Key drivers
+## 🔮 Future Enhancements
 
-•	Market relevance
+- [ ] Order book liquidity metrics
+- [ ] Funding rate analysis
+- [ ] On-chain data integration (whale tracking)
+- [ ] Social sentiment (X / Reddit)
+- [ ] Predictive modeling
+- [ ] Alert system (Telegram / Discord)
+- [ ] Scheduled auto-refresh in dashboard
 
-•	Representative headlines
+---
 
-Output example:
-```json
-{
-  "symbol": "ATOM",
-  "sentiment": "positive",
-  "sentimentScore": 6,
-  "reasons": [
-    "Developer activity reached all-time high",
-    "New DeFi launches on Cosmos Hub"
-  ]
-}
-```
-________________________________________
-### 6️⃣ Aggregation Layer
-Combines:
+## 📝 Conclusion
 
-•	Market movers
+This system functions as a **real-time crypto market intelligence engine** that transforms raw data into actionable insights — bridging the gap between market movements, news catalysts, and decision-ready analytics.
 
-•	Liquidity indicators
+---
 
-•	Sentiment insights
-________________________________________
-### 7️⃣ API Output Layer
-Final structured response via webhook:
-```json
-{
-  "topGainers": [...],
-  "topLosers": [...],
-  "topVolume": [...],
-  "topTrades": [...],
-  "sentiment": {...}
-}
-```
-________________________________________
-##  Challenges Faced During Development
- 1) Data Heterogeneity
-
-Different news sources provide:
-
-•	Different field names
-
-•	Missing metadata
-
-•	Inconsistent timestamps
-
-•	Various content formats
-
-👉 Solved through normalization layer.
-________________________________________
- 2) Noise & Irrelevant News
-
-Many articles mention coins casually.
-
-Solution:
-
-•	Coin-specific filtering
-
-•	Grouping by asset
-
-•	AI interpretation
-________________________________________
- 3) API Rate Limits
-
-Fetching news per coin can overwhelm sources.
-
-Mitigation:
-
-•	Loop control
-
-•	Wait nodes
-
-•	Payload limits
-
-•	Top-N filtering
-________________________________________
- 4) Linking News to Market Moves
-
-Hardest problem.
-
-Price movements may be caused by:
-
-•	Liquidity
-
-•	Technical factors
-
-•	Whale activity
-
-•	Derivatives markets
-
-👉 AI used to approximate causal signals.
-________________________________________
- 5) AI Output Consistency
-
-Models sometimes produce:
-
-•	Non-JSON output
-
-•	Hallucinated content
-
-•	Missing fields
-
-Solution:
-
-•	Strict prompt design
-
-•	Schema enforcement
-
-•	Post-processing
-________________________________________
- 6) Payload Size & Performance
-
-Large news sets can:
-
-•	Slow execution
-
-•	Increase costs
-
-•	Cause timeouts
-
-Mitigation:
-
-•	Limit articles per asset
-
-•	Filter inactive coins
-
-•	Use top movers only
-________________________________________
- 7) Real-Time Reliability
-
-Crypto markets operate 24/7.
-
-Pipeline must be:
-
-•	Fault tolerant
-
-•	Restartable
-
-•	Deterministic
-________________________________________
- Key Achievements
-
-This project demonstrates:
-
-🧠 Data Engineering Skills
-
-•	ETL design
-
-•	API orchestration
-
-•	Data normalization
-
-•	Pipeline reliability
-
-•	Schema design
-________________________________________
- Analytics Capability
-
-•	Market intelligence extraction
-
-•	Signal prioritization
-
-•	Multi-factor analysis
-________________________________________
- Applied AI Integration
-
-•	Real-world NLP usage
-
-•	Structured output generation
-
-•	Domain-specific prompts
-________________________________________
- Production Thinking
-
-•	Rate limiting
-
-•	Payload control
-
-•	Error handling
-
-•	API design
-________________________________________
- Use Cases
-
-For Traders
-
-•	Identify actionable coins today
-
-•	Understand movement drivers
-
-•	Reduce research time
-________________________________________
-For Analysts
-
-•	Market monitoring
-
-•	Event impact analysis
-
-•	Trend detection
-________________________________________
-For Developers
-
-•	Backend intelligence API
-
-•	Trading dashboards
-
-•	Automation systems
-________________________________________
- Future Enhancements
-
-Possible upgrades:
-
-•	Order book liquidity metrics
-
-•	Funding rate analysis
-
-•	On-chain data integration
-
-•	Whale tracking
-
-•	Social sentiment (X/Reddit)
-
-•	Predictive modeling
-
-•	Alert systems
-________________________________________
-# Conclusion
-
-This system functions as a real-time crypto market intelligence engine that transforms raw data into actionable insights.
-It bridges the gap between:
-
-👉 Market movements
-
-👉 News catalysts
-
-👉 Decision-ready analytics
-
+*Built with n8n · Binance API · Google Gemini · Vanilla JS*
