@@ -539,7 +539,7 @@
   <span class="config-label">Webhook URL</span>
   <input class="config-input" id="webhookUrl" type="text"
     placeholder="https://your-koyeb-app.koyeb.app/webhook/crypto/mover/pipeline"
-    value="https://n8ncloud.rmbn8n.cfd/webhook/crypto/demo/movers">
+    value="https://n8ncloud.rmbn8n.cfd/webhook/crypto/mover/pipeline">
   <span class="config-sep">|</span>
   <span class="config-label">Source</span>
   <span class="tag">Binance · CoinTelegraph · CoinDesk · Google RSS</span>
@@ -883,10 +883,10 @@ async function runPipeline() {
   }, 3000);
 
   try {
+    // Use simple GET request to avoid browser CORS preflight.
+    // Your n8n Webhook node is configured as GET /webhook/crypto/mover/pipeline.
     const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ trigger: 'web-dashboard', ts: Date.now() })
+      method: 'GET'
     });
 
     clearInterval(loadingTimer);
@@ -900,7 +900,7 @@ async function runPipeline() {
     document.getElementById('loadingState').classList.remove('active');
     document.getElementById('emptyState').classList.remove('hidden');
     setStatus('ERROR', 'var(--red)');
-    showError(err.message + ' — Check your webhook URL and that n8n is running on Koyeb.');
+    showError(err.message + ' — Browser blocked the request or the webhook failed. Check DevTools Console and n8n CORS/response headers.');
     console.error(err);
   }
 
@@ -985,9 +985,15 @@ document.getElementById('webhookUrl').addEventListener('keydown', e => {
   if (e.key === 'Enter') runPipeline();
 });
 
-// Load saved URL
+// Load saved URL, but ignore the old demo endpoint if it was saved before.
+const DEFAULT_WEBHOOK_URL = 'https://n8ncloud.rmbn8n.cfd/webhook/crypto/mover/pipeline';
 const saved = localStorage.getItem('crypto_intel_url');
-if (saved) document.getElementById('webhookUrl').value = saved;
+if (saved && !saved.includes('/webhook/crypto/demo/movers')) {
+  document.getElementById('webhookUrl').value = saved;
+} else {
+  document.getElementById('webhookUrl').value = DEFAULT_WEBHOOK_URL;
+  localStorage.setItem('crypto_intel_url', DEFAULT_WEBHOOK_URL);
+}
 
 document.getElementById('webhookUrl').addEventListener('input', e => {
   localStorage.setItem('crypto_intel_url', e.target.value);
